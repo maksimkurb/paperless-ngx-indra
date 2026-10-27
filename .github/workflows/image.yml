@@ -1,0 +1,129 @@
+name: Image
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      paperless_version:
+        description: "paperless-ngx version (e.g. 2.20.0); empty = latest release"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      paperless_version:
+        type: string
+        required: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      paperless: ${{ steps.v.outputs.paperless }}
+      plugin: ${{ steps.v.outputs.plugin }}
+      is_latest: ${{ steps.v.outputs.is_latest }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.paperless_version }}
+        run: |
+          latest=$(gh api repos/paperless-ngx/paperless-ngx/releases/latest --jq .tag_name | sed 's/^v//')
+          ver="${INPUT:-$latest}"
+          ver="${ver#v}"
+          plugin=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "paperless=$ver" >> "$GITHUB_OUTPUT"
+          echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
+          echo "is_latest=$([ "$ver" = "$latest" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  gate:
+    # Fail early when the base image's OCRmyPDF is outside the range the plugin supports.
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check OCRmyPDF version in base image
+        run: |
+          base=ghcr.io/paperless-ngx/paperless-ngx:${{ needs.resolve.outputs.paperless }}
+          docker pull "$base"
+          have=$(docker run --rm --entrypoint python3 "$base" -c "import importlib.metadata as m;print(m.version('ocrmypdf'))")
+          echo "base image ocrmypdf: $have"
+          python3 - "$have" <<'PY'
+          import re, sys, tomllib
+          deps = tomllib.load(open("pyproject.toml", "rb"))["project"]["dependencies"]
+          spec = next(d for d in deps if d.startswith("ocrmypdf"))
+          lo, hi = re.findall(r"(\d+(?:\.\d+)*)", spec)
+          t = lambda s: tuple(int(x) for x in s.split("."))
+          have = sys.argv[1]
+          if not t(lo) <= t(have) < t(hi):
+              sys.exit(f"ocrmypdf {have} is outside the supported range {spec}")
+          PY
+
+  build:
+    needs: [resolve, gate]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux/amd64, runner: ubuntu-latest, suffix: amd64 }
+          - { platform: linux/arm64, runner: ubuntu-24.04-arm, suffix: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            PAPERLESS_VERSION=${{ needs.resolve.outputs.paperless }}
+            PLUGIN_VERSION=${{ needs.resolve.outputs.plugin }}
+          tags: ${{ env.IMAGE }}:build-${{ needs.resolve.outputs.paperless }}-${{ matrix.suffix }}
+          push: true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.suffix }}
+      - name: Smoke test (plugin is picked up by paperless's own parser)
+        run: |
+          docker run --rm --entrypoint python3 \
+            -v "$PWD/tests/smoke:/smoke:ro" \
+            ${{ env.IMAGE }}:build-${{ needs.resolve.outputs.paperless }}-${{ matrix.suffix }} \
+            /smoke/paperless_smoke.py
+
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch tags
+        env:
+          P: ${{ needs.resolve.outputs.paperless }}
+          V: ${{ needs.resolve.outputs.plugin }}
+          LATEST: ${{ needs.resolve.outputs.is_latest }}
+        run: |
+          src="$IMAGE:build-$P"
+          tags="-t $IMAGE:$P -t $IMAGE:$P-indra$V"
+          [ "$LATEST" = true ] && tags="$tags -t $IMAGE:latest"
+          docker buildx imagetools create $tags "$src-amd64" "$src-arm64"

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ocrmypdf-indra"
+version = "0.1.0"
+description = "OCRmyPDF engine plugin that uses Indra OCR instead of Tesseract (for paperless-ngx)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+  "indra-ocr>=1.1,<2",
+  "ocrmypdf>=17.12,<17.13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy", "numpy", "jiwer"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ocrmypdf_indra"]
+
+[tool.pytest.ini_options]
+markers = ["integration: needs the real Indra model and OCRmyPDF system tools"]
+addopts = "-m 'not integration'"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.mypy]
+ignore_missing_imports = true

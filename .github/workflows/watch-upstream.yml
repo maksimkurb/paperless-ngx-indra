@@ -1,0 +1,57 @@
+name: Watch upstream
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  packages: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.c.outputs.version }}
+      build: ${{ steps.c.outputs.build }}
+    steps:
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver=$(gh api repos/paperless-ngx/paperless-ngx/releases/latest --jq .tag_name | sed 's/^v//')
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "ghcr.io/${{ github.repository }}:$ver" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      paperless_version: ${{ needs.check.outputs.version }}
+
+  report:
+    needs: [check, build]
+    if: failure() && needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v='${{ needs.check.outputs.version }}'
+          title="Image build for paperless-ngx $v failed"
+          if [ -z "$(gh issue list -R "$GITHUB_REPOSITORY" --search "$title in:title" --state open --json number --jq '.[0].number')" ]; then
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" \
+              --body "The compatibility gate or build failed for paperless-ngx $v. See $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
