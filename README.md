@@ -8,45 +8,66 @@ Paperless-ngx builds its searchable PDFs with OCRmyPDF. This plugin swaps only t
 recognition engine, so Paperless keeps its OCR modes (`skip`, `redo`, `force`, `auto`), PDF/A
 output, rotation/deskew handling and fallbacks.
 
-## Use the image
+## Install into the stock paperless-ngx image (recommended)
+
+No custom image is needed. Paperless runs every script in `/custom-cont-init.d` as root just
+before it starts; [`init/10-indra.sh`](init/10-indra.sh) installs the pinned plugin version
+with `uv`, the same way the image installs its own packages.
 
 ```yaml
 services:
   webserver:
-    image: ghcr.io/maksimkurb/paperless-ngx-indra:latest   # or :<paperless-version>
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
     volumes:
-      - indra-models:/usr/src/paperless/indra-models        # model cache (see below)
+      - ./init:/custom-cont-init.d:ro       # folder owned by root, mode a=rx
+      - indra:/usr/src/paperless/indra      # uv cache + model cache
     environment:
+      PAPERLESS_OCR_USER_ARGS: '{"plugins": ["ocrmypdf_indra"]}'
       PAPERLESS_OCR_LANGUAGE: rus+eng+kaz
+      HF_HOME: /usr/src/paperless/indra/hf
 volumes:
-  indra-models:
+  indra:
 ```
 
-The image sets `PAPERLESS_OCR_USER_ARGS='{"plugins": ["ocrmypdf_indra"]}'`. To go back to
-Tesseract, override that variable (for example set it to `{}`).
+Download `init/10-indra.sh` from this repository (use the file from the release tag you want).
 
-Tags: `<paperless-version>`, `<paperless-version>-indra<plugin-version>`, and `latest`.
+### Works offline
 
-## Install into your own image
+The script pins the plugin version (`INDRA_PLUGIN_VERSION`, set in the script) and:
 
-```dockerfile
-RUN uv pip install --system ocrmypdf-indra   # or a path / git URL
-ENV PAPERLESS_OCR_USER_ARGS='{"plugins": ["ocrmypdf_indra"]}'
-```
+1. does nothing if that version is already installed (plain container restarts);
+2. otherwise installs from uv's cache (`--offline`), which the `indra` volume keeps after the
+   first online start, so even a recreated container starts without network;
+3. otherwise downloads the wheel from the GitHub release;
+4. if there is no network and nothing cached, it exits with an error explaining what to do.
 
-The plugin is deliberately **not** registered through an entry point, so installing it does
-nothing until a run names it in `plugins`. Outside Paperless: `ocrmypdf --plugin ocrmypdf_indra in.pdf out.pdf`.
-
-## Configuration
+The model (~76 MB) is downloaded on first OCR run into `HF_HOME` and is used from the cache
+afterwards without network; the Indra version, and therefore the model revision, is pinned by
+the plugin. To avoid the network entirely, put the wheel next to the script and set
+`INDRA_PLUGIN_SPEC=/wheels/ocrmypdf_indra-<version>-py3-none-any.whl`, and pre-populate the
+`indra` volume (or set `INDRA_OCR_MODEL_DIR` to a folder that already contains the models).
 
 | Variable | Default | |
 |---|---|---|
-| `INDRA_OCR_MODEL_DIR` | image: `/usr/src/paperless/indra-models` | Folder with the Indra models. Empty folder = downloaded from Hugging Face on first use (~76 MB). |
+| `INDRA_PLUGIN_VERSION` | pinned in the script | Plugin version to keep installed. |
+| `INDRA_PLUGIN_SPEC` | the GitHub release wheel | Wheel path or URL. |
+| `INDRA_CACHE_DIR` | `/usr/src/paperless/indra/uv` | uv cache for offline reinstalls. |
+| `INDRA_OCR_MODEL_DIR` | unset | A folder that already holds the models. Setting it disables downloading. |
 | `INDRA_OCR_MATH` | off | `1` writes math lines as LaTeX (slower). |
 | `PAPERLESS_OCR_LANGUAGE` | | Accepted but not used for recognition: Indra classifies the script of each line itself. |
 
-Make the model folder a volume so the weights are downloaded once. The container user must be
-able to write to it; the image creates it owned by `paperless`.
+To go back to Tesseract, remove the `plugins` entry from `PAPERLESS_OCR_USER_ARGS`.
+
+The plugin is deliberately **not** registered through an entry point, so installing it does
+nothing until a run names it in `plugins`. Outside Paperless:
+`ocrmypdf --plugin ocrmypdf_indra in.pdf out.pdf`.
+
+## Optional: prebuilt image
+
+`docker/Dockerfile` and the manually triggered `image.yml` workflow build an image with the
+plugin baked in (`ghcr.io/maksimkurb/paperless-ngx-indra:<paperless-version>`). It sets
+`PAPERLESS_OCR_USER_ARGS` for you and keeps its caches in a volume at `/usr/src/paperless/indra`.
+A daily workflow checks that the plugin still installs and works in the newest stock image.
 
 ## How it works / limitations
 
@@ -70,7 +91,7 @@ able to write to it; the image creates it owned by `paperless`.
 The plugin code is Apache-2.0. **Indra's model weights are not**: they use a modified OpenRAIL-M
 licence (free for personal use, research and startups under $20M funding/revenue; may not be used
 to compete with Datalab's API). Because of that the published image does **not** contain the
-weights; they are downloaded on first use. Build privately with `--build-arg BAKE_MODELS=1` to
+weights; they are downloaded on first use into a cache volume. Build privately with `--build-arg BAKE_MODELS=1` to
 embed them. Read the [weights licence](https://huggingface.co/datalab-to/indra-ocr/blob/main/LICENSE)
 before using this commercially.
 
