@@ -85,3 +85,28 @@ def test_rotated_page_is_mapped_back_to_input_frame():
     root, _ = page_to_tree(p, (100, 50), 72.0)
     b = root.lines[0].bbox
     assert (b.left, b.top, b.right, b.bottom) == (0, 40, 20, 50)
+
+
+def test_latin_lookalikes_become_cyrillic_on_a_cyrillic_page(monkeypatch):
+    monkeypatch.delenv("INDRA_SCRIPT_FIX", raising=False)
+    lines = [
+        line([0, 0, 90, 10], "Основание: Плановая проверка"),
+        line([0, 20, 90, 30], "Aдрес COO CE 4"),  # first letter is Latin
+    ]
+    _, text = page_to_tree(page(lines), (100, 100), 200.0)
+    # mixed word and all-lookalike word are converted, short "CE" and "4" are kept
+    assert text.splitlines()[1] == "Адрес СОО CE 4"
+
+
+def test_english_page_is_left_alone(monkeypatch):
+    monkeypatch.delenv("INDRA_SCRIPT_FIX", raising=False)
+    lines = [line([0, 0, 90, 10], "Meter CEO Price kW")]
+    _, text = page_to_tree(page(lines), (100, 100), 200.0)
+    assert text == "Meter CEO Price kW"
+
+
+def test_script_fix_can_be_switched_off(monkeypatch):
+    monkeypatch.setenv("INDRA_SCRIPT_FIX", "off")
+    lines = [line([0, 0, 90, 10], "Основание Plan"), line([0, 20, 90, 30], "COO")]
+    _, text = page_to_tree(page(lines), (100, 100), 200.0)
+    assert text.splitlines()[1] == "COO"
