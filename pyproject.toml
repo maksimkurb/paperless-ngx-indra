@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ocrmypdf-indra"
-version = "0.1.0"
+version = "0.1.1"
 description = "OCRmyPDF engine plugin that uses Indra OCR instead of Tesseract (for paperless-ngx)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
