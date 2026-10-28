@@ -41,8 +41,9 @@ The script pins the plugin version (`INDRA_PLUGIN_VERSION`, set in the script) a
 3. otherwise downloads the wheel from the GitHub release;
 4. if there is no network and nothing cached, it exits with an error explaining what to do.
 
-The model (~76 MB) is downloaded on first OCR run into `HF_HOME` and is used from the cache
-afterwards without network; the Indra version, and therefore the model revision, is pinned by
+The init script also downloads the model (~76 MB) into `HF_HOME` once at container start (before
+the Celery workers exist, so they don't all fetch it at the same time). It is used from the
+cache afterwards without network, and a failed download only logs a warning; the Indra version, and therefore the model revision, is pinned by
 the plugin. To avoid the network entirely, put the wheel next to the script and set
 `INDRA_PLUGIN_SPEC=/wheels/ocrmypdf_indra-<version>-py3-none-any.whl`, and pre-populate the
 `indra` volume (or set `INDRA_OCR_MODEL_DIR` to a folder that already contains the models).
