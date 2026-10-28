@@ -13,6 +13,8 @@ from typing import Any
 
 from ocrmypdf.hocrtransform import BoundingBox, OcrClass, OcrElement
 
+from .scripts import fix_page
+
 _LINE_CLASS = {
     "Page-Header": OcrClass.HEADER,
     "Page-Footer": OcrClass.FOOTER,
@@ -105,8 +107,9 @@ def page_to_tree(
     par: OcrElement | None = None
     par_key: object = object()
     texts = []
-    for line in page.lines:
-        text = re.sub(r"\s+", " ", line.text).strip()
+    cleaned = [re.sub(r"\s+", " ", line.text).strip() for line in page.lines]
+    cleaned = fix_page(cleaned)
+    for line, text in zip(page.lines, cleaned, strict=True):
         if not text:
             continue
         box = line.box
