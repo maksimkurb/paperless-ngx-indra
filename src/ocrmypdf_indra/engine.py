@@ -10,6 +10,7 @@ from ocrmypdf.hocrtransform import OcrElement
 from ocrmypdf.pluginspec import OcrEngine, OrientationConfidence
 from PIL import Image
 
+from . import fields
 from .convert import page_to_tree
 from .model import get_converter
 
@@ -165,7 +166,10 @@ class IndraEngine(OcrEngine):
         input_file: Path, options: OcrOptions, page_number: int = 0
     ) -> tuple[OcrElement, str]:
         gray, dpi = _load_gray(input_file)
-        page = get_converter().ocr(gray)
+        converter = get_converter()
+        page = converter.ocr(gray)
+        if fields.enabled() and not page.rotation:
+            fields.read_segments(gray, page.lines, lambda crop: converter.ocr(crop).lines)
         height, width = gray.shape
         return page_to_tree(page, (width, height), dpi, page_number)
 

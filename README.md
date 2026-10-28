@@ -54,6 +54,8 @@ the plugin. To avoid the network entirely, put the wheel next to the script and 
 | `INDRA_PLUGIN_SPEC` | the GitHub release wheel | Wheel path or URL. |
 | `INDRA_CACHE_DIR` | `/usr/src/paperless/indra/uv` | uv cache for offline reinstalls. |
 | `INDRA_OCR_MODEL_DIR` | unset | A folder that already holds the models. Setting it disables downloading. |
+| `INDRA_SPLIT_FIELDS` | on | `0` turns off re-reading the printed labels in front of fill-in underlines (see below). |
+| `INDRA_SCRIPT_FIX` | `auto` | Turns Latin look-alike letters into Cyrillic on mostly-Cyrillic pages. `cyrillic` forces it, `off` disables it. |
 | `INDRA_OCR_MATH` | off | `1` writes math lines as LaTeX (slower). |
 | `PAPERLESS_OCR_LANGUAGE` | | Accepted but not used for recognition: Indra classifies the script of each line itself. |
 
@@ -81,6 +83,10 @@ A daily workflow checks that the plugin still installs and works in the newest s
   Paperless's default): OCRmyPDF then turns the page upright before recognition. With rotation
   off, OCRmyPDF drops the text layer of a sideways page. Indra's orientation model can miss a
   quarter turn on nearly empty pages.
+- Forms: when a line has a long fill-in underline (`Потребитель ______` with handwriting on it), the
+  printed label is read again on its own, because the handwriting next to it spoils its reading.
+  The handwriting keeps its original reading. This helps most labels but can occasionally drop a
+  word that is itself underlined.
 - Only the default (fpdf2) PDF renderer is supported, which is what Paperless uses.
 - Vertical CJK pages are read, but the text layer is laid out horizontally.
 - Languages: Latin, Cyrillic (Russian, **Kazakh** and others), Greek, CJK, Arabic-script, Hebrew,
