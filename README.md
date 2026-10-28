@@ -54,6 +54,8 @@ the plugin. To avoid the network entirely, put the wheel next to the script and 
 | `INDRA_PLUGIN_SPEC` | the GitHub release wheel | Wheel path or URL. |
 | `INDRA_CACHE_DIR` | `/usr/src/paperless/indra/uv` | uv cache for offline reinstalls. |
 | `INDRA_OCR_MODEL_DIR` | unset | A folder that already holds the models. Setting it disables downloading. |
+| `INDRA_LINE_HEIGHT` | `16` | Line detection runs at the page size where text lines are this many pixels tall. `0` keeps Indra's own behaviour (1024 px page, larger only for tiny text). |
+| `INDRA_OCR_LM` | off | `1` keeps Indra's language model. It is tuned on handwriting and made printed text worse in our tests. |
 | `INDRA_SPLIT_FIELDS` | on | `0` turns off re-reading the printed labels in front of fill-in underlines (see below). |
 | `INDRA_SCRIPT_FIX` | `auto` | Turns Latin look-alike letters into Cyrillic on mostly-Cyrillic pages. `cyrillic` forces it, `off` disables it. |
 | `INDRA_OCR_MATH` | off | `1` writes math lines as LaTeX (slower). |
