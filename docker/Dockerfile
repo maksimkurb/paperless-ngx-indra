@@ -16,16 +16,16 @@ RUN set -eux \
 
 # Model weights are under a modified OpenRAIL-M licence, so by default they are
 # downloaded on first use into a volume rather than baked into the (public) image.
-ENV INDRA_OCR_MODEL_DIR=/usr/src/paperless/indra-models \
-    HF_HOME=/usr/src/paperless/indra-models/.hf \
+# (INDRA_OCR_MODEL_DIR must stay unset: it means "use this folder as is, never download".)
+ENV HF_HOME=/usr/src/paperless/indra/hf \
     PAPERLESS_OCR_USER_ARGS='{"plugins": ["ocrmypdf_indra"]}'
 RUN set -eux \
-    && mkdir -p "${INDRA_OCR_MODEL_DIR}" \
+    && mkdir -p "${HF_HOME}" \
     && if [ "${BAKE_MODELS}" = "1" ]; then \
          python3 -c "import indra_ocr; indra_ocr.model_dir(None)"; \
        fi \
-    && chown -R paperless:paperless "${INDRA_OCR_MODEL_DIR}"
-VOLUME ["/usr/src/paperless/indra-models"]
+    && chown -R paperless:paperless /usr/src/paperless/indra
+VOLUME ["/usr/src/paperless/indra"]
 
 LABEL org.opencontainers.image.title="paperless-ngx-indra" \
       org.opencontainers.image.source="https://github.com/maksimkurb/paperless-ngx-indra" \

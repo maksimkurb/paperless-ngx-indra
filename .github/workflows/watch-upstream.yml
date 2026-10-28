@@ -1,57 +1,46 @@
-name: Watch upstream
+# Daily check that the plugin still installs and works in the stock paperless-ngx image.
+name: Compatibility
 on:
   schedule:
     - cron: "17 5 * * *"
+  pull_request:
+    paths: [init/**, src/**, tests/smoke/**, pyproject.toml]
   workflow_dispatch:
+    inputs:
+      paperless_version:
+        description: "paperless-ngx tag to test (default: latest release)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
   issues: write
-  packages: read
-  actions: write
 
 jobs:
-  check:
+  compat:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.c.outputs.version }}
-      build: ${{ steps.c.outputs.build }}
     steps:
-      - id: c
+      - uses: actions/checkout@v5
+      - name: Install via init script in the stock image, then run the smoke test
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.paperless_version }}
+        run: |
+          ver="${INPUT:-$(gh api repos/paperless-ngx/paperless-ngx/releases/latest --jq .tag_name)}"
+          plugin=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "paperless-ngx $ver, plugin $plugin"
+          docker run --rm --entrypoint bash \
+            -e INDRA_PLUGIN_VERSION="$plugin" -e INDRA_PLUGIN_SPEC=/tmp/plugin \
+            -v "$PWD:/src:ro" \
+            "ghcr.io/paperless-ngx/paperless-ngx:${ver#v}" \
+            -c 'cp -r /src /tmp/plugin && /src/init/10-indra.sh && python3 /src/tests/smoke/paperless_smoke.py'
+      - name: Open an issue when the scheduled run fails
+        if: failure() && github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ver=$(gh api repos/paperless-ngx/paperless-ngx/releases/latest --jq .tag_name | sed 's/^v//')
-          echo "version=$ver" >> "$GITHUB_OUTPUT"
-          if docker manifest inspect "ghcr.io/${{ github.repository }}:$ver" >/dev/null 2>&1; then
-            echo "build=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  build:
-    needs: check
-    if: needs.check.outputs.build == 'true'
-    uses: ./.github/workflows/image.yml
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    with:
-      paperless_version: ${{ needs.check.outputs.version }}
-
-  report:
-    needs: [check, build]
-    if: failure() && needs.check.outputs.build == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          v='${{ needs.check.outputs.version }}'
-          title="Image build for paperless-ngx $v failed"
-          if [ -z "$(gh issue list -R "$GITHUB_REPOSITORY" --search "$title in:title" --state open --json number --jq '.[0].number')" ]; then
-            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" \
-              --body "The compatibility gate or build failed for paperless-ngx $v. See $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          title="Compatibility check against latest paperless-ngx failed"
+          if [ -z "$(gh issue list --search "$title in:title" --state open --json number --jq '.[0].number')" ]; then
+            gh issue create --title "$title" \
+              --body "See $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           fi
